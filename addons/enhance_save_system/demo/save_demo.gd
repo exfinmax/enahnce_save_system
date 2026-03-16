@@ -22,7 +22,7 @@ func _ready() -> void:
 
 	# ── 步骤 1：注册模块 ────────────────────────────────────────
 	print("【1】注册模块...")
-	var sm := get_tree().root.get_node_or_null("SaveSystem")          # 演示用：手动实例化（游戏中用 AutoLoad）
+	var sm := get_tree().root.get_node_or_null("SaveSystem")        # 演示用：手动实例化（游戏中用 AutoLoad）
 	sm.game_version = "0.1.0-demo"
 	sm.max_slots = 4
 
