@@ -1,325 +1,240 @@
 # Enhanced Save System
 
-## 概述
-Enhanced Save System 是一个功能全面的 Godot 存档系统插件，提供了模块化的存档解决方案，支持输入重映射、自动存档、存档预览图和加密功能。
+Godot 4 模块化存档插件，支持 AES 加密、gzip 压缩、原子写入、版本迁移、运行时 UI 和编辑器面板。
 
-## 功能特性
+---
 
-### 核心功能
-- **纯 JSON 存储**：快速、人可读、无引用解析开销
-- **模块化多态**：每个 ISaveModule 子类负责自己数据域
-- **双轨道存档**：
-  - 全局存档（global.json）：设置、统计等不依赖槽位的数据
-  - 槽位存档（slot_01.json … slot_N.json）：关卡进度、玩家状态等
-- **Writer 积累模式**：先收集所有模块变更 → 一次性写盘（减少 I/O）
-- **自动存档**：可配置的自动存档间隔和槽位
-- **存档预览图**：保存游戏状态时自动截图
-- **存档加密**：可选的存档文件加密功能
-- **导入/导出**：支持存档文件的迁移
-- **输入重映射**：内置的输入键位自定义系统
+## 新增功能（v2 扩展）
 
-### 模块系统
-- **player_module**：玩家状态管理
-- **level_module**：关卡进度管理
-- **settings_module**：游戏设置管理
-- **stats_module**：游戏统计数据管理
-- **keybinding_module**：输入键位管理
+| 功能 | 说明 |
+|------|------|
+| AES-GCM / AES-CBC 加密 | 替代旧版 XOR，支持完整性验证 |
+| 原子写入 + .bak 备份 | 防止写入中断导致存档损坏 |
+| gzip / deflate 压缩 | 大数据存档可节省 60–80% 空间 |
+| 版本迁移机制 | 游戏更新后自动升级旧存档 |
+| 运行时存档管理 UI | 可嵌入游戏的槽位选择界面 |
+| 编辑器底部面板 | 直接在编辑器中查看/删除/导入/导出存档 |
+| 配置文件模块注册 | `save_modules.cfg` 控制模块加载顺序 |
 
-## 安装方法
+---
 
-1. 将 `addons/enhance_save_system` 目录复制到你的 Godot 项目的 `addons` 目录中
-2. 在 Godot 编辑器中，进入 `项目 > 项目设置 > 插件`，启用 "Enhanced Save System"
-3. 插件会自动将 `SaveSystem` 注册为 AutoLoad 单例
+## 安装
+
+1. 将 `addons/enhance_save_system` 复制到项目 `addons/` 目录
+2. `项目 > 项目设置 > 插件` 中启用 **Enhanced Save System**
+3. 插件自动注册 `SaveSystem` AutoLoad 单例
+
+---
 
 ## 快速上手
 
-### 基本用法
 ```gdscript
-# 保存全局 + 当前槽位
-SaveSystem.quick_save()
-
-# 加载全局 + 当前槽位
+# 保存 / 加载
+SaveSystem.save_slot(1)
+SaveSystem.load_slot(1)
+SaveSystem.quick_save()   # 全局 + 当前槽位
 SaveSystem.quick_load()
 
-# 保存到指定槽位
-SaveSystem.save_slot(2)
-
-# 从指定槽位加载
-SaveSystem.load_slot(2)
-
-# 导出槽位存档
-SaveSystem.export_slot(1, "user://backup/slot1.json")
-
-# 导入槽位存档
-SaveSystem.import_slot(1, "user://backup/slot1.json")
+# 删除 / 查询
+SaveSystem.delete_slot(1)
+SaveSystem.slot_exists(1)
+var slots: Array[SlotInfo] = SaveSystem.list_slots()
 ```
 
-### 注册自定义模块
+---
+
+## 配置项（Inspector）
+
+### 基础
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `max_slots` | 8 | 最大槽位数 |
+| `game_version` | "1.0.0" | 写入存档元数据的版本号 |
+| `auto_register` | true | 自动扫描 Modules/ 目录注册模块 |
+
+### 加密
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `encryption_enabled` | false | 启用加密 |
+| `encryption_key` | "" | 加密密钥（请勿硬编码到发布版本） |
+| `encryption_mode` | "aes_gcm" | `"xor"` / `"aes_cbc"` / `"aes_gcm"` |
+
+> `aes_gcm` 推荐：同时提供加密和完整性验证。`xor` 仅用于向后兼容旧存档。
+
+### 压缩
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `compression_enabled` | false | 启用压缩 |
+| `compression_mode` | "gzip" | `"gzip"` / `"deflate"` |
+
+> 压缩和加密同时启用时，管线为：JSON → 压缩 → 加密 → 写文件。
+
+### 原子写入
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `atomic_write_enabled` | true | 先写 .tmp 再重命名，防止写入中断 |
+| `backup_enabled` | false | 覆盖前保留 .bak 备份 |
+
+### 自动存档
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `auto_save_enabled` | false | 启用定时自动存档 |
+| `auto_save_interval` | 300 | 自动存档间隔（秒） |
+| `auto_save_slot` | 1 | 自动存档槽位 |
+
+### 模块注册
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `use_module_config` | false | 使用配置文件控制模块加载顺序 |
+| `module_config_path` | "res://save_modules.cfg" | 配置文件路径 |
+
+---
+
+## 文件格式
+
+### 无加密/压缩（向后兼容）
+纯 JSON 文本，`_meta` 字段包含版本、时间等元信息。
+
+### 有加密或压缩（v3 二进制格式）
+```
+[4字节 LE: header_len][header JSON][body]
+```
+- `header JSON`：包含完整 `_meta`（含 `iv`/`tag`/`hmac` 等加密参数）
+- `body`：密文或压缩数据
+
+读取时自动识别格式，旧存档无需迁移。
+
+---
+
+## 信号
+
 ```gdscript
-# 在场景的 _ready 函数中注册自定义模块
-func _ready():
-    SaveSystem.register_module(MyCustomModule.new())
+signal slot_saved(slot: int, ok: bool)
+signal slot_loaded(slot: int, ok: bool)
+signal slot_deleted(slot: int)
+signal slot_changed(new_slot: int)
+signal slot_load_failed(slot: int, reason: String)  # reason: "read_failed" / "integrity_error" / "migration_failed"
+signal slot_backed_up(slot: int, backup_path: String)
+signal save_migrated(slot: int, old_version: int, new_version: int)
+signal global_saved(ok: bool)
+signal global_loaded(ok: bool)
 ```
 
-### 配置选项
-在 Godot 编辑器中，选择 AutoLoad 中的 SaveSystem 节点，可以在 Inspector 中配置以下选项：
+---
 
-- **max_slots**：最大槽位数（1-based）
-- **auto_register**：是否自动扫描并注册 Modules/ 目录中的模块
-- **auto_load_global**：启动时是否自动加载全局存档
-- **auto_load_slot**：启动时自动加载的槽位（0 = 不自动加载）
-- **game_version**：写入存档元数据的游戏版本
-- **auto_save_enabled**：是否启用自动存档
-- **auto_save_interval**：自动存档间隔（秒）
-- **auto_save_slot**：自动存档槽位
-- **save_screenshots_enabled**：是否启用存档预览图
-- **screenshot_width**：预览图宽度
-- **screenshot_height**：预览图高度
-- **encryption_enabled**：是否启用存档加密
-- **encryption_key**：加密密钥
+## 版本迁移
 
-## 信号列表
+```gdscript
+# 在游戏启动时注册迁移函数
+SaveSystem.register_migration(1, func(payload: Dictionary) -> Dictionary:
+    # 将 v1 格式升级到 v2
+    if payload.has("player"):
+        payload["player"]["stamina"] = 100  # 新增字段
+    return payload
+)
+```
 
-- **global_saved(ok)**：全局存档写盘完成
-- **global_loaded(ok)**：全局存档读取完成
-- **slot_saved(slot, ok)**：指定槽位写盘完成
-- **slot_loaded(slot, ok)**：指定槽位读取完成
-- **slot_deleted(slot)**：槽位文件已删除
-- **slot_changed(slot)**：当前活跃槽位切换
+迁移前自动创建 `.pre_migration.bak` 备份。迁移失败时回滚并发出 `slot_load_failed` 信号。
+
+---
+
+## 运行时存档 UI
+
+```gdscript
+var ui = preload("res://addons/enhance_save_system/Components/SaveManager/save_manager_ui.tscn").instantiate()
+ui.mode = SaveManagerUI.Mode.LOAD  # 或 .SAVE
+add_child(ui)
+ui.slot_selected.connect(func(slot): print("选择了槽位", slot))
+```
+
+---
+
+## 自定义模块
+
+```gdscript
+class_name MyModule extends ISaveModule
+
+func get_module_key() -> String: return "my_module"
+func is_global() -> bool: return false
+
+func collect_data() -> Dictionary:
+    return { "score": GameState.score }
+
+func apply_data(data: Dictionary) -> void:
+    GameState.score = data.get("score", 0)
+
+# 可选：版本迁移钩子
+func migrate_payload(old_payload: Dictionary, old_version: int) -> Dictionary:
+    if old_version < 2:
+        old_payload["score"] = old_payload.get("points", 0)  # 字段重命名
+    return old_payload
+```
+
+参考 `templates/migration_module_template.gd` 和 `templates/compressed_module_template.gd`。
+
+---
+
+## 模块配置文件（save_modules.cfg）
+
+```ini
+[module_player]
+script = "res://Modules/player_module.gd"
+enabled = true
+priority = 10
+
+[module_level]
+script = "res://Modules/level_module.gd"
+enabled = true
+priority = 20
+```
+
+启用：`SaveSystem.use_module_config = true`
+
+---
+
+## Demo 场景
+
+| 场景 | 说明 |
+|------|------|
+| `demo/full_feature_demo.tscn` | 加密 + 压缩 + 原子写入综合演示，含**压缩基准测试**按钮 |
+| `demo/atomic_write_demo.tscn` | 原子写入和备份演示 |
+| `demo/migration_demo.tscn` | 版本迁移完整流程演示 |
+| `demo/save_manager_ui_demo.tscn` | SaveManagerUI 组件集成演示 |
+
+---
 
 ## 目录结构
 
 ```
 enhance_save_system/
-├── Components/         # UI 组件
-│   └── InputRemapping/  # 输入重映射相关组件
-├── Modules/            # 存档模块
-│   ├── keybinding_module.gd
-│   ├── level_module.gd
-│   ├── player_module.gd
-│   ├── settings_module.gd
-│   └── stats_module.gd
-├── core/               # 核心功能
-│   ├── i_save_module.gd
-│   ├── resource_serializer.gd
-│   ├── save_resource.gd
-│   ├── save_system.gd
-│   ├── save_writer.gd
-│   └── slot_info.gd
-├── demo/               # 示例场景
-├── templates/          # 模板文件
-├── plugin.cfg
-└── save_plugin.gd
+├── core/
+│   ├── save_system.gd        # AutoLoad 单例
+│   ├── save_writer.gd        # 静态读写工具（二进制格式）
+│   ├── encryptor.gd          # AES-GCM / AES-CBC / XOR
+│   ├── compressor.gd         # gzip / deflate
+│   ├── atomic_writer.gd      # 原子写入 + .bak 备份
+│   ├── migration_manager.gd  # 版本迁移
+│   ├── module_registry.gd    # 配置文件模块注册
+│   ├── i_save_module.gd      # 模块抽象基类
+│   └── slot_info.gd          # 槽位元信息
+├── Components/SaveManager/
+│   ├── save_manager_ui.gd    # 运行时槽位管理 UI
+│   └── save_manager_ui.tscn
+├── Modules/                  # 内置存档模块
+├── demo/                     # 示例场景
+├── templates/                # 模块模板
+├── save_modules.cfg          # 模块注册配置示例
+└── save_plugin.gd            # 编辑器插件 + 底部面板
 ```
 
-## 自定义模块
-
-### 创建全局模块
-1. 复制 `templates/custom_global_module.gd` 到你的项目中
-2. 修改类名和模块键
-3. 实现 `collect_data` 和 `apply_data` 方法
-4. 调用 `SaveSystem.register_module()` 注册模块
-
-### 创建槽位模块
-1. 复制 `templates/custom_slot_module.gd` 到你的项目中
-2. 修改类名和模块键
-3. 实现 `collect_data` 和 `apply_data` 方法
-4. 调用 `SaveSystem.register_module()` 注册模块
-
-## 输入重映射
-
-### 使用方法
-1. 在场景中添加 `keybinding_ui.tscn` 组件
-2. 或者使用代码创建：
-
-```gdscript
-var keybinding_ui = preload("res://addons/enhance_save_system/Components/InputRemapping/keybinding_ui.tscn").instantiate()
-add_child(keybinding_ui)
-```
-
-## 示例场景
-
-插件包含以下示例场景：
-
-- **SaveDemo.tscn**：基础存档功能演示
-- **enhanced_save_demo.tscn**：增强功能演示
-- **encryption_test.tscn**：加密功能测试
-- **import_export_demo.tscn**：导入/导出功能演示
-
-## 性能优化
-
-- **减少 I/O 操作**：使用 Writer 积累模式，一次性写盘
-- **异步操作**：存档操作在主线程中执行，但设计上尽量减少阻塞
-- **模块化设计**：每个模块只处理自己的数据，提高可维护性
+---
 
 ## 兼容性
 
-- 支持 Godot 4.0 及以上版本
-- 纯 GDScript 实现，无外部依赖
+- Godot 4.2+
+- 纯 GDScript，无外部依赖
+- 旧版 XOR 加密存档可直接读取（自动识别格式）
 
 ## 许可证
-
-MIT License
-
-# Enhanced Save System
-
-## Overview
-Enhanced Save System is a comprehensive save system plugin for Godot, providing a modular save solution with input remapping, auto-save, save screenshots, and encryption features.
-
-## Features
-
-### Core Features
-- **Pure JSON Storage**：Fast, human-readable, no reference resolution overhead
-- **Modular Polymorphism**：Each ISaveModule subclass manages its own data domain
-- **Dual-track Save**：
-  - Global save (global.json)：Settings, statistics, and other slot-independent data
-  - Slot save (slot_01.json … slot_N.json)：Level progress, player state, etc.
-- **Writer Accumulation Mode**：Collect all module changes first → write to disk once (reduce I/O)
-- **Auto-save**：Configurable auto-save interval and slot
-- **Save Screenshots**：Automatically capture screenshots when saving game state
-- **Save Encryption**：Optional save file encryption
-- **Import/Export**：Support for save file migration
-- **Input Remapping**：Built-in input key customization system
-
-### Module System
-- **player_module**：Player state management
-- **level_module**：Level progress management
-- **settings_module**：Game settings management
-- **stats_module**：Game statistics management
-- **keybinding_module**：Input key management
-
-## Installation
-
-1. Copy the `addons/enhance_save_system` directory to your Godot project's `addons` directory
-2. In Godot editor, go to `Project > Project Settings > Plugins` and enable "Enhanced Save System"
-3. The plugin will automatically register `SaveSystem` as an AutoLoad singleton
-
-## Quick Start
-
-### Basic Usage
-```gdscript
-# Save global + current slot
-SaveSystem.quick_save()
-
-# Load global + current slot
-SaveSystem.quick_load()
-
-# Save to specific slot
-SaveSystem.save_slot(2)
-
-# Load from specific slot
-SaveSystem.load_slot(2)
-
-# Export slot save
-SaveSystem.export_slot(1, "user://backup/slot1.json")
-
-# Import slot save
-SaveSystem.import_slot(1, "user://backup/slot1.json")
-```
-
-### Register Custom Modules
-```gdscript
-# Register custom module in scene's _ready function
-func _ready():
-    SaveSystem.register_module(MyCustomModule.new())
-```
-
-### Configuration Options
-In Godot editor, select the SaveSystem node in AutoLoad, you can configure the following options in Inspector:
-
-- **max_slots**：Maximum number of slots (1-based)
-- **auto_register**：Whether to automatically scan and register modules in Modules/ directory
-- **auto_load_global**：Whether to automatically load global save on startup
-- **auto_load_slot**：Slot to automatically load on startup (0 = no auto load)
-- **game_version**：Game version written to save metadata
-- **auto_save_enabled**：Whether to enable auto-save
-- **auto_save_interval**：Auto-save interval (seconds)
-- **auto_save_slot**：Auto-save slot
-- **save_screenshots_enabled**：Whether to enable save screenshots
-- **screenshot_width**：Screenshot width
-- **screenshot_height**：Screenshot height
-- **encryption_enabled**：Whether to enable save encryption
-- **encryption_key**：Encryption key
-
-## Signal List
-
-- **global_saved(ok)**：Global save write completion
-- **global_loaded(ok)**：Global save read completion
-- **slot_saved(slot, ok)**：Specific slot write completion
-- **slot_loaded(slot, ok)**：Specific slot read completion
-- **slot_deleted(slot)**：Slot file deleted
-- **slot_changed(slot)**：Current active slot changed
-
-## Directory Structure
-
-```
-enhance_save_system/
-├── Components/         # UI components
-│   └── InputRemapping/  # Input remapping components
-├── Modules/            # Save modules
-│   ├── keybinding_module.gd
-│   ├── level_module.gd
-│   ├── player_module.gd
-│   ├── settings_module.gd
-│   └── stats_module.gd
-├── core/               # Core functionality
-│   ├── i_save_module.gd
-│   ├── resource_serializer.gd
-│   ├── save_resource.gd
-│   ├── save_system.gd
-│   ├── save_writer.gd
-│   └── slot_info.gd
-├── demo/               # Example scenes
-├── templates/          # Template files
-├── plugin.cfg
-└── save_plugin.gd
-```
-
-## Custom Modules
-
-### Create Global Module
-1. Copy `templates/custom_global_module.gd` to your project
-2. Modify class name and module key
-3. Implement `collect_data` and `apply_data` methods
-4. Call `SaveSystem.register_module()` to register the module
-
-### Create Slot Module
-1. Copy `templates/custom_slot_module.gd` to your project
-2. Modify class name and module key
-3. Implement `collect_data` and `apply_data` methods
-4. Call `SaveSystem.register_module()` to register the module
-
-## Input Remapping
-
-### Usage
-1. Add `keybinding_ui.tscn` component to your scene
-2. Or create it with code:
-
-```gdscript
-var keybinding_ui = preload("res://addons/enhance_save_system/Components/InputRemapping/keybinding_ui.tscn").instantiate()
-add_child(keybinding_ui)
-```
-
-## Example Scenes
-
-The plugin includes the following example scenes:
-
-- **SaveDemo.tscn**：Basic save functionality demo
-- **enhanced_save_demo.tscn**：Enhanced features demo
-- **encryption_test.tscn**：Encryption functionality test
-- **import_export_demo.tscn**：Import/export functionality demo
-
-## Performance Optimization
-
-- **Reduce I/O Operations**：Use Writer accumulation mode, write to disk once
-- **Asynchronous Operations**：Save operations are executed in the main thread, but designed to minimize blocking
-- **Modular Design**：Each module only handles its own data, improving maintainability
-
-## Compatibility
-
-- Supports Godot 4.0 and above
-- Pure GDScript implementation, no external dependencies
-
-## License
 
 MIT License
