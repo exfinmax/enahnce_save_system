@@ -1,13 +1,60 @@
-[gd_scene load_steps=2 format=3 uid="uid://save_manager_ui_demo"]
+[gd_scene format=3 uid="uid://b133vhjp15psa"]
 
-[ext_resource type="Script" path="res://addons/enhance_save_system/demo/save_manager_ui_demo.gd" id="1_smud"]
+[sub_resource type="GDScript" id="GDScript_gtugs"]
+script/source = "extends Control
+## SaveManagerUI Demo
+## 演示 SaveManagerUI 组件的集成方式
 
-[node name="SaveManagerUIDemo" type="Control"]
+@onready var _mode_btn: Button = $VBox/Controls/ModeBtn
+@onready var _log: RichTextLabel = $VBox/Log
+@onready var _ui_container: Control = $VBox/UIContainer
+
+var _save_ui: SaveManagerUI
+var _current_mode: SaveManagerUI.Mode = SaveManagerUI.Mode.LOAD
+
+func _ready() -> void:
+	_log.bbcode_enabled = true
+	_append(\"[b]SaveManagerUI Demo[/b]\\n\")
+	_spawn_ui()
+
+func _spawn_ui() -> void:
+	if is_instance_valid(_save_ui):
+		_save_ui.queue_free()
+	var scene := load(\"res://addons/enhance_save_system/Components/SaveManager/save_manager_ui.tscn\")
+	_save_ui = scene.instantiate() as SaveManagerUI
+	_save_ui.mode = _current_mode
+	_save_ui.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_save_ui.slot_selected.connect(_on_slot_selected)
+	_save_ui.slot_deleted.connect(_on_slot_deleted)
+	_ui_container.add_child(_save_ui)
+	_append(\"SaveManagerUI 已加载（模式：%s）\\n\" % (\"保存\" if _current_mode == SaveManagerUI.Mode.SAVE else \"加载\"))
+
+func _on_toggle_mode_pressed() -> void:
+	_current_mode = SaveManagerUI.Mode.SAVE if _current_mode == SaveManagerUI.Mode.LOAD else SaveManagerUI.Mode.LOAD
+	_mode_btn.text = \"切换到%s模式\" % (\"加载\" if _current_mode == SaveManagerUI.Mode.SAVE else \"保存\")
+	if is_instance_valid(_save_ui):
+		_save_ui.mode = _current_mode
+	_append(\"切换到%s模式\\n\" % (\"保存\" if _current_mode == SaveManagerUI.Mode.SAVE else \"加载\"))
+
+func _on_slot_selected(slot: int) -> void:
+	_append(\"[color=green]槽位 %d 被选中[/color]\\n\" % slot)
+
+func _on_slot_deleted(slot: int) -> void:
+	_append(\"[color=red]槽位 %d 已删除[/color]\\n\" % slot)
+
+func _append(text: String) -> void:
+	_log.append_text(text)
+"
+
+[node name="SaveManagerUIDemo" type="Control" unique_id=666182112]
+layout_mode = 3
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-script = ExtResource("1_smud")
+script = SubResource("GDScript_gtugs")
 
-[node name="VBox" type="VBoxContainer" parent="."]
+[node name="VBox" type="VBoxContainer" parent="." unique_id=1332040863]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 20.0
@@ -15,21 +62,26 @@ offset_top = 20.0
 offset_right = -20.0
 offset_bottom = -20.0
 
-[node name="Title" type="Label" parent="VBox"]
-text = "SaveManagerUI Demo"
+[node name="Title" type="Label" parent="VBox" unique_id=1264754614]
+layout_mode = 2
 theme_override_font_sizes/font_size = 20
+text = "SaveManagerUI Demo"
 
-[node name="Controls" type="HBoxContainer" parent="VBox"]
+[node name="Controls" type="HBoxContainer" parent="VBox" unique_id=849661546]
+layout_mode = 2
 
-[node name="ModeBtn" type="Button" parent="VBox/Controls"]
+[node name="ModeBtn" type="Button" parent="VBox/Controls" unique_id=1014621653]
+layout_mode = 2
 text = "切换到保存模式"
 
-[node name="UIContainer" type="Control" parent="VBox"]
+[node name="UIContainer" type="Control" parent="VBox" unique_id=1708803810]
 custom_minimum_size = Vector2(0, 300)
+layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Log" type="RichTextLabel" parent="VBox"]
+[node name="Log" type="RichTextLabel" parent="VBox" unique_id=733051737]
 custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
 bbcode_enabled = true
 
 [connection signal="pressed" from="VBox/Controls/ModeBtn" to="." method="_on_toggle_mode_pressed"]
