@@ -54,7 +54,7 @@ signal save_migrated(slot: int, old_version: int, new_version: int)
 @export var screenshot_height: int = 480
 
 ## 加密配置
-@export var encryption_enabled: bool = false
+@export var encryption_enabled: bool = true
 @export var encryption_key: String = "your-encryption-key-here"
 ## 加密模式："xor" / "aes_cbc" / "aes_gcm"
 @export var encryption_mode: String = "aes_gcm"
@@ -72,8 +72,8 @@ signal save_migrated(slot: int, old_version: int, new_version: int)
 @export var split_modules_enabled: bool = false
 
 ## 模块注册配置
-@export var use_module_config: bool = false
-@export var module_config_path: String = "res://save_modules.cfg"
+@export var use_module_config: bool = true
+@export var module_config_path: String = "res://addons/enhance_save_system/save_modules.cfg"
 
 # ──────────────────────────────────────────────
 # 路径常量
@@ -119,7 +119,8 @@ func _ready() -> void:
 		load_slot(auto_load_slot)
 	if auto_save_enabled:
 		_setup_auto_save()
-
+	
+	get_tree().root.close_requested.connect(on_win_closed)
 # ──────────────────────────────────────────────
 # 自动存档
 # ──────────────────────────────────────────────
@@ -191,6 +192,7 @@ func _auto_register_modules() -> void:
 		var modules := registry.load_from_config(module_config_path)
 		for m in modules:
 			register_module(m)
+		print(modules)
 		return
 
 	var modules_dir := _resolve_modules_dir()
@@ -307,6 +309,60 @@ func load_global() -> bool:
 	var ok := SaveWriter.read(_GLOBAL_PATH, modules, _make_read_opts())
 	global_loaded.emit(ok)
 	return ok
+
+# ──────────────────────────────────────────────
+# 单模块读写 API
+# ──────────────────────────────────────────────
+
+func save_module(module_key: String, slot: int = -1) -> bool:
+	var module := get_module(module_key)
+	if module == null:
+		push_warning("SaveSystem.save_module: module '%s' not registered" % module_key)
+		return false
+	var path: String
+	if module.is_global():
+		path = _GLOBAL_PATH
+	else:
+		var s := _resolve_slot(slot)
+		if not _valid(s):
+			return false
+		path = _slot_path(s)
+	return _write_module_to_file(module, path)
+
+func load_module(module_key: String, slot: int = -1) -> bool:
+	var module := get_module(module_key)
+	if module == null:
+		push_warning("SaveSystem.load_module: module '%s' not registered" % module_key)
+		return false
+	var path: String
+	if module.is_global():
+		path = _GLOBAL_PATH
+	else:
+		var s := _resolve_slot(slot)
+		if not _valid(s):
+			return false
+		path = _slot_path(s)
+	return _read_module_from_file(module, path)
+
+func _write_module_to_file(module: ISaveModule, path: String) -> bool:
+	var opts := _make_write_opts()
+	var payload := SaveWriter.read_json(path, _make_read_opts())
+	# 如果文件不存在或解析失败，payload 为空；此时直接创建一个新 payload
+	if payload.is_empty():
+		payload = {}
+	# 更新当前模块对应的数据
+	payload[module.get_module_key()] = module.collect_data()
+	return SaveWriter.write_json(payload, path, opts)
+
+func _read_module_from_file(module: ISaveModule, path: String) -> bool:
+	var payload := SaveWriter.read_json(path, _make_read_opts())
+	if payload.is_empty():
+		return false
+	var key := module.get_module_key()
+	if payload.has(key):
+		module.apply_data(payload[key] as Dictionary)
+		return true
+	return false
 
 # ──────────────────────────────────────────────
 # 槽位存档 API
@@ -490,3 +546,10 @@ func _resolve_slot(slot: int) -> int:
 
 func _slot_path(slot: int) -> String:
 	return _SLOT_PATTERN % slot
+
+func on_win_closed() -> void:
+	for i:Dictionary in _global_modules.values():
+		var module = i["module"]
+		if module.has_method("on_win_closed"):
+			module.on_win_closed()
+			

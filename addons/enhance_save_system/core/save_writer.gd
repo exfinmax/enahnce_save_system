@@ -232,8 +232,28 @@ static func read(path: String, modules: Array, opts: ReadOptions = null) -> bool
 static func get_meta_data(payload: Dictionary) -> Dictionary:
 	return payload.get("_meta", {}) as Dictionary
 
+## 只读取文件的 _meta 头，不解密/解压 body
+## 对加密文件同样有效（meta 存在 header 中，明文可读）
 static func peek_meta(path: String) -> Dictionary:
-	return get_meta_data(read_json(path))
+	if not FileAccess.file_exists(path):
+		return {}
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return {}
+	var raw := file.get_buffer(file.get_length())
+	file = null
+
+	# 新二进制格式：header 是明文 JSON，直接读取，无需解密
+	var parsed := _try_unpack_binary(raw)
+	if parsed.size() == 2:
+		return parsed[0]  # 就是 meta dict
+
+	# 旧纯文本 JSON 格式
+	var text := raw.get_string_from_utf8()
+	var json := JSON.new()
+	if json.parse(text) == OK and json.data is Dictionary:
+		return (json.data as Dictionary).get("_meta", {}) as Dictionary
+	return {}
 
 # ──────────────────────────────────────────────
 # 二进制格式打包/解包
